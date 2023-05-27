@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta charset="utf-8" />
+		<link rel="stylesheet" type="text/css" href="css/style.css" />
+		<title>Summary of Results and Methodology: Exercise 2</title>
+	</head>
+<body>
+<h1>Summary of Results and Methodology: Exercise 2</h1>
+
+<p>Bildverarbeitung 23FS | Prof. Konrad Schindler</p>
+
+<p>Benedikt Pohl, bepohl@ethz.ch</p>
+
+<h2>1. Fourier Transform</h2>
+
+<h3>1.1 Transformation</h3>
+
+<p>I use following code implemented as a function composition: <code>np.log(np.abs(fft.fftshift(fft.fft2(img))))</code> to get the following result:</p>
+
+<figure><img src="fourier_transform_limmat.png"/></figure>
+
+<p>The <code>fft2</code> function transforms the image to the frequency domain, the <code>fftshift</code> function shifts the the low frequencies to the center, the magnitude of all resulting numbers are computed using <code>np.abs</code> and lastly a logarithmic scaling is applied for better visualization using <code>np.log</code>.</p>
+
+<h3>1.2 High-pass-Filter</h3>
+
+<figure><img src="highpass_fourier_applied.png"/></figure>
+
+<p>My implemented code creates and applies a high-pass filter to an image in the frequency domain. The main steps are:</p>
+
+<ol>
+	<li><code>highpass_filter</code>: This function constructs a high-pass filter. This is done by calculating the euclidean distance of each pixel from the center and comparing it to the <code>RADIUS</code>.</li>
+	<li>The <code>highpass</code> filter is then applied to the Fourier transformed image (<code>img_freq</code>) which is already shifted with low frequencies at the center. The filter masks (sets to zero) the low frequency components at the center, preserving the high frequencies on the outside based on the given <code>RADIUS</code></li>
+	<li>After applying the high-pass filter to the frequency domain representation of the image, the spectrum is transformed back into image space using the inverse FFT (<code>fft.ifft2</code>). <code>fft.ifftshift</code> is used to shift the frequencies back to their original locations before the inverse FFT is applied. </li>
+	<li>The resulting image (<code>img_filtered</code>) is then the real component of the inverse FFT, corresponding to an image where high frequency components are preserved and low frequency components are suppressed.</li>
+</ol>
+
+<pre><code class="code-highlighted code-python"><span class="syntax-all syntax-keyword">def</span> <span class="syntax-all syntax-entity">highpass_filter</span>(<span class="syntax-all syntax-parameter">img_size</span>, <span class="syntax-all syntax-parameter">radius</span>):
+<span class="syntax-all syntax-comment">    </span><span class="syntax-all syntax-string">&#39;&#39;&#39; Returns a highpass filter.
+</span><span class="syntax-all syntax-string">    input:
+</span><span class="syntax-all syntax-string">        img_size: length of the filter
+</span><span class="syntax-all syntax-string">        redius: radius of the circular aperture
+</span><span class="syntax-all syntax-string">    output:
+</span><span class="syntax-all syntax-string">        highpass: a filter of size(img_size, img_size) with values zero and one
+</span><span class="syntax-all syntax-string">    &#39;&#39;&#39;</span>
+    
+    <span class="syntax-all syntax-comment"># Use an ogrid to create indices in regard to the center of the image
+</span>    y,x <span class="syntax-all syntax-keyword">=</span> np.ogrid[<span class="syntax-all syntax-keyword">-</span>img_size<span class="syntax-all syntax-keyword">/</span><span class="syntax-all syntax-constant">2</span>:img_size<span class="syntax-all syntax-keyword">/</span><span class="syntax-all syntax-constant">2</span>, <span class="syntax-all syntax-keyword">-</span>img_size<span class="syntax-all syntax-keyword">/</span><span class="syntax-all syntax-constant">2</span>:img_size<span class="syntax-all syntax-keyword">/</span><span class="syntax-all syntax-constant">2</span>]
+
+    <span class="syntax-all syntax-comment"># calculate the distance for each pixel from the center
+</span>    dist_from_center <span class="syntax-all syntax-keyword">=</span> np.sqrt(x<span class="syntax-all syntax-keyword">**</span><span class="syntax-all syntax-constant">2</span> <span class="syntax-all syntax-keyword">+</span> y<span class="syntax-all syntax-keyword">**</span><span class="syntax-all syntax-constant">2</span>)
+
+    <span class="syntax-all syntax-comment"># Create a circular mask based on radius
+</span>    mask <span class="syntax-all syntax-keyword">=</span> dist_from_center <span class="syntax-all syntax-keyword">&gt;</span> radius <span class="syntax-all syntax-comment"># high frequencies at outside edge are kept
+</span>    <span class="syntax-all syntax-keyword">return</span> mask
+
+<span class="syntax-all syntax-comment"># Apply the highpass filter to the image in frequency domain
+</span><span class="syntax-all syntax-comment">## Get mask to apply to frequency domain
+</span>highpass <span class="syntax-all syntax-keyword">=</span> highpass_filter(img_size, <span class="syntax-all syntax-parameter">radius</span><span class="syntax-all syntax-keyword">=</span><span class="syntax-all syntax-constant">RADIUS</span>)
+
+<span class="syntax-all syntax-comment">## Get image in frequency domain
+</span>img_freq <span class="syntax-all syntax-keyword">=</span> fft.fftshift(fft.fft2(img))
+img_highpass <span class="syntax-all syntax-keyword">=</span>  img_freq <span class="syntax-all syntax-keyword">*</span> highpass</code></pre>
+
+<h3>1.3 Gaussian filter</h3>
+
+<p>First I implemented the function <code>g_kern(kernlen, std)</code>, that creates a two-dimensional Gaussian kernel, which is then used for convolution:</p>
+
+<ol>
+	<li>It first ensures that the kernel length (<code>kernlen</code>) is odd (adding 1 if it’s not).</li>
+	<li>It then generates a one-dimensional Gaussian kernel using the <code>stats.norm.pdf</code> function from scipy. This is done along an array of size <code>kernlen</code> centered at 0.</li>
+	<li>The 1D Gaussian kernel is then converted into a 2D kernel by computing the outer product of the 1D kernel with itself. This essentially spreads the 1D Gaussian distribution along two dimensions.</li>
+</ol>
+
+<blockquote>
+<p>I tried an approach (<code>g_kern_cut(img_size, std, kernlen)</code>) to generate a larger gaussian kernel based on the image size and then cut it down to a smaller window, considering this could improve accuracy. However, the larger kernel does not offer a distinct advantage over directly generating a smaller one. In my case, the linspace function generates equally spaced points in the interval, and the resulting Gaussian kernel&#39;s y-values will be the same for corresponding x-values, regardless of kernel size. <strong>As such, creating a smaller kernel is just as effective as creating a larger one and cutting it down.</strong></p>
+</blockquote>
+
+<p>Then I convolve the Image with the provided gaussian kernel from <code>g_kern(6 * std, std=5)</code>, using the rule-of-thumb with a kernlen of six times the standard-deviation using <code>scipy.ndimage.convolve(img, kernel)</code>.</p>
+
+<p>To compare the computation, I also apply the Gaussian filter in the frequency domain. The <code>apply_gauss_via_fourier()</code> function takes the image and Gaussian filter as inputs. The final output is the real part of the transformed result, providing an image that has been processed with the Gaussian filter in the frequency domain. This process is analogous to convolution in the spatial domain and can be more efficient, especially for large images or kernels.</p>
+
+<figure><img src="gaussian_conv_fft.png"/></figure>
+
+<pre><code class="code-highlighted code-python"><span class="syntax-all syntax-keyword">def</span> <span class="syntax-all syntax-entity">g_kern</span>(<span class="syntax-all syntax-parameter">kernlen</span><span class="syntax-all syntax-keyword">=</span><span class="syntax-all syntax-constant">5</span>, <span class="syntax-all syntax-parameter">std</span><span class="syntax-all syntax-keyword">=</span><span class="syntax-all syntax-constant">1</span>):
+<span class="syntax-all syntax-comment">    </span><span class="syntax-all syntax-string">&#39;&#39;&#39; Returns a 2D Gaussian kernel with standard devitation sig
+</span><span class="syntax-all syntax-string">    input:
+</span><span class="syntax-all syntax-string">        kernlen: length of the filter
+</span><span class="syntax-all syntax-string">        std: standard deviation of the gaussian in pixels
+</span><span class="syntax-all syntax-string">    output:
+</span><span class="syntax-all syntax-string">        g_kern_2d: a gaussian kernel of size (kernlen, kernlen) with sum 1
+</span><span class="syntax-all syntax-string">    &#39;&#39;&#39;</span>
+    <span class="syntax-all syntax-comment"># If kernlen is even, increment it by 1 to make it odd
+</span>    <span class="syntax-all syntax-keyword">if</span> kernlen <span class="syntax-all syntax-keyword">%</span> <span class="syntax-all syntax-constant">2</span> <span class="syntax-all syntax-keyword">==</span> <span class="syntax-all syntax-constant">0</span>:
+        kernlen <span class="syntax-all syntax-keyword">+=</span> <span class="syntax-all syntax-constant">1</span>
+    
+    <span class="syntax-all syntax-comment"># Create a 1D Gaussian kernel centered at 0
+</span>    g_kern_1d <span class="syntax-all syntax-keyword">=</span> stats.norm.pdf(np.linspace(<span class="syntax-all syntax-keyword">-</span>(kernlen<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>)<span class="syntax-all syntax-keyword">/</span><span class="syntax-all syntax-constant">2.</span>,
+                                            (kernlen<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>)<span class="syntax-all syntax-keyword">/</span><span class="syntax-all syntax-constant">2.</span>, kernlen), 
+                                            <span class="syntax-all syntax-parameter">scale</span><span class="syntax-all syntax-keyword">=</span>std)
+
+    <span class="syntax-all syntax-comment"># Make it 2D by outer product
+</span>    g_kern_2d <span class="syntax-all syntax-keyword">=</span> np.outer(g_kern_1d, g_kern_1d)
+    
+    <span class="syntax-all syntax-keyword">return</span> g_kern_2d
+
+<span class="syntax-all syntax-keyword">def</span> <span class="syntax-all syntax-entity">apply_convolution_2d</span>(<span class="syntax-all syntax-parameter">img</span>, <span class="syntax-all syntax-parameter">kernel</span>):
+    img_conv <span class="syntax-all syntax-keyword">=</span> ndimage.convolve(img, kernel)
+    <span class="syntax-all syntax-keyword">return</span> img_conv
+
+<span class="syntax-all syntax-keyword">def</span> <span class="syntax-all syntax-entity">apply_gauss_via_fourier</span>(<span class="syntax-all syntax-parameter">img</span>, <span class="syntax-all syntax-parameter">gaussfilter_img</span>):
+    gaussfilter_f <span class="syntax-all syntax-keyword">=</span> fft.fft2(gaussfilter_img)
+    gaussfilter_f_shift <span class="syntax-all syntax-keyword">=</span> fft.fftshift(gaussfilter_f)
+
+    img_freq <span class="syntax-all syntax-keyword">=</span> fft.fftshift(fft.fft2(img))
+    img_gauss_f <span class="syntax-all syntax-keyword">=</span> img_freq <span class="syntax-all syntax-keyword">*</span> np.abs(gaussfilter_f_shift)
+    img_gauss_f <span class="syntax-all syntax-keyword">=</span> np.real(fft.ifft2(fft.ifftshift(img_gauss_f)))
+    <span class="syntax-all syntax-keyword">return</span> img_gauss_f
+
+<span class="syntax-all syntax-comment"># Convolution with small kernel
+</span>conv_kernel <span class="syntax-all syntax-keyword">=</span> g_kern(<span class="syntax-all syntax-constant">6</span> <span class="syntax-all syntax-keyword">*</span> std, <span class="syntax-all syntax-parameter">std</span><span class="syntax-all syntax-keyword">=</span>std)
+img_conv <span class="syntax-all syntax-keyword">=</span> apply_convolution_2d(img, conv_kernel)
+
+<span class="syntax-all syntax-comment"># Using fully sized gaussian via fft
+</span>gaussfilter_img <span class="syntax-all syntax-keyword">=</span> g_kern(img_size, <span class="syntax-all syntax-parameter">std</span><span class="syntax-all syntax-keyword">=</span>std)
+img_gauss_f <span class="syntax-all syntax-keyword">=</span> apply_gauss_via_fourier(img, gaussfilter_img)</code></pre>
+
+<p>To compare the timing, I implemented a separable gaussian filter on an image, which should result in the same effect as a two-dimensional Gaussian filter:</p>
+
+<ol>
+	<li>The <code>g_kern1d()</code> function generates a one-dimensional Gaussian kernel with a specified length (<code>kernlen</code>) and standard deviation (<code>std</code>). This is analogous to the 1D kernel generated in the <code>g_kern()</code> function for the 2D filter.</li>
+	<li>The <code>apply_convolution_yx()</code> function then convolves this 1D Gaussian kernel with the input image separately along the y-axis and then the x-axis. This is done using the <code>ndimage.convolve1d()</code> function from scipy.</li>
+</ol>
+
+<figure><img src="gaussian_1d_2d.png"/></figure>
+
+<h4>1.3.1 Timing results</h4>
+
+<p>Following procedure is run to get the timing results:</p>
+
+<ol>
+	<li>I time the three different image filtering methods (<code>apply_convolution_2d(), apply_convolution_yx(), apply_gauss_via_fourier()</code>) by using the measure_time function. This function takes another function (func) and measures the average time it takes to run this function over a certain number of repetitions (<code>repeat = 10</code> times).</li>
+	<li>For each filtering method, the apply_and_measure function is called, which internally applies the respective filtering function to the image and measures the time it takes. These measurements are then tabulated and displayed.</li>
+	<li>The differences between the results of each pair of methods are calculated to assess their similarity, which is also tabulated and displayed.</li>
+</ol>
+
+<figure><img src="carbon%20(2).png"/></figure>
+
+<h2>2. Morphology</h2>
+
+<h3>2.1 Coins</h3>
+
+<h4>2.1.1 Own segmentation algorithm</h4>
+
+<figure><img src="segmented_hough_bepohl.png"/></figure>
+
+<p>I wanted to implement a different approach as usually everybody is using the watershed tutorial from <a href="https://docs.opencv.org/4.x/d3/db4/tutorial_py_watershed.html">OpenCV</a>. So I applied the following operations in my <code>segment_util()</code> function:</p>
+
+<ol>
+	<li>Conversion of the image to grayscale for easier processing.</li>
+	<li>Application of Gaussian blur to reduce noise and detail in the image.</li>
+	<li>Utilization of Canny edge detection to highlight the boundaries of objects.</li>
+	<li>Dilation and erosion operations performed on the detected edges to close gaps, enhance the boundary definitions and suppress noise.</li>
+	<li>Use of the <code>cv Hough Circle Transform</code> to detect coins in the image, given a specific range of possible radii (<code>minRadius=110, maxRadius=195)</code>.</li>
+	<li>If circles are detected, they are drawn on a blank image of the same size as the original. </li>
+</ol>
+
+<p>The result is a binary image (boolean mask) where detected objects (coins) are filled white circles against a black background. </p>
+
+<p><strong>Improvements are needed for better radius estimation, which is currently underestimated. Also, internal coin artifacts from edge detection need more effective removal. One could further play around with the erosion and dilation parameters.</strong></p>
+
+<figure><img src="gif_segment.gif"/></figure>
+
+<p>The function <code>instance_segmentation_util()</code> is implemented the following way:</p>
+
+<ol>
+	<li>It first labels different connected components in the binary input image (cv2.connectedComponents).</li>
+	<li>Then it performs a watershed transform on the resulting image using the pre-labelled image as markers.</li>
+	<li>After that, it loops over each unique segment in the watershed and assigns a random color to all the pixels belonging to that segment.</li>
+</ol>
+
+<figure><img src="coins_instances.png"/></figure>
+
+<blockquote>
+<p>I first tried to use a gaussian blur to make the eroded insides of the coins more „circular“ (see commented code in function segment_util()). But the gaussian kernel makes them hexagonal: <img src="coins_instances_hexas.png"/></p>
+</blockquote>
+
+<h3>2.2 Letter recognition</h3>
+
+<p>The function <code>text_recog_util()</code> executes character recognition within a given text using morphological operations (erosion and dilation). The steps include:</p>
+
+<ol>
+	<li>The input text and a letter of interest are converted into binary representation.</li>
+	<li>Binary erosion is performed on the text using the binary representation of the letter as the structuring element, highlighting locations where the letter shape fits within the text.</li>
+	<li>Binary dilation is then applied to the eroded image to restore the character to its original size, emphasizing regions where the letter was detected.</li>
+	<li>The result is a binary image showing where the specific letter is recognized in the text:<br/><img src="text_recog_results.png"/></li>
+</ol>
+
+<h2>3. Corner Detector</h2>
+
+<p>I implemented two functions <code>calculate_response_shitomasi(img, sigma=1)</code> and <code>calculate_response_harris(img, k=0.05, sigma=1)</code> to compute the response map based on the underlying algorithms. They use a gaussian filter to create a so called „response window“ around each pixel for more robust corner detection without noise. </p>
+
+<p>The main difference are the following: Shi-Tomasi uses the minimum eigenvalue of the structure tensor, while Harris uses a formula (<code>response = det_M - k * (trace_M)**2 </code>) combining determinant and trace of the structure tensor.</p>
+
+<p>The gradient magnitude, from which the structure tensor is derived, looks like this:</p>
+
+<figure><img src="Ixy_mag.jpg"/></figure>
+
+<p>After the computation of the response maps, they are thresholded using the mean of the values such as: </p>
+
+<pre><code class="code-highlighted code-python">response_harris_thresh <span class="syntax-all syntax-keyword">=</span> np.zeros_like(response_harris)
+response_harris_thresh[response_harris <span class="syntax-all syntax-keyword">&gt;</span> np.mean(response_harris)] <span class="syntax-all syntax-keyword">=</span> <span class="syntax-all syntax-constant">255</span>
+
+response_shitomasi_thresh <span class="syntax-all syntax-keyword">=</span> np.zeros_like(response_shitomasi)
+response_shitomasi_thresh[response_shitomasi <span class="syntax-all syntax-keyword">&lt;</span> np.mean(response_shitomasi)] <span class="syntax-all syntax-keyword">=</span> <span class="syntax-all syntax-constant">255</span></code></pre>
+
+<p>The resulting image looks like this:</p>
+
+<figure><img src="response_maps_thresholded.png"/></figure>
+
+<p>Based on the histogram the threshold for the Harris response was chosen as <code>threshold = 0.4e-2</code>. After using NMS the resulting corners are marked with a cross:</p>
+
+<figure><img src="output_after_nms_harris.png"/></figure>
+
+<p>As a comparison, I computed the corners using cv’s <code>goodFeaturesToTrack()</code> function:</p>
+
+<figure><img src="good_features_to_track.png"/></figure>
+
+<h2>4. Canny Edge Detection</h2>
+
+<p>I first blurred the image using a gaussian filter (std = 1):</p>
+
+<figure><img src="1_canny_blurred.png"/></figure>
+
+<p>Then I computed the gradients using a sobel filter and calculated the magnitude and direction of the gradient using</p>
+
+<pre><code class="code-highlighted code-python">magnitude <span class="syntax-all syntax-keyword">=</span> np.sqrt(I_x<span class="syntax-all syntax-keyword">**</span><span class="syntax-all syntax-constant">2</span> <span class="syntax-all syntax-keyword">+</span> I_y<span class="syntax-all syntax-keyword">**</span><span class="syntax-all syntax-constant">2</span>)
+direction <span class="syntax-all syntax-keyword">=</span> np.arctan2(I_y, I_x)</code></pre>
+
+<p>To get the following result:</p>
+
+<figure><img src="2_canny_gradient.png"/></figure>
+
+<p>To thin out the edges I used a threshold of 20% of the maximum magnitude of the gradient. After that, the non-maximum-suppression function is applied in the following way:</p>
+
+<ol>
+	<li>It loops over each pixel in the gradient image and finds its direction of gradient (which is already calculated from above).</li>
+	<li>Depending on the gradient direction, it compares the pixel with its neighboring pixels along the gradient direction.</li>
+	<li>If the pixel&#39;s intensity is greater than or equal to the intensities of the two neighbors, the pixel is considered as a local maximum and preserved (retains its gradient value).</li>
+	<li>If not, it is suppressed (set to zero).</li>
+</ol>
+
+<p>To make it compute faster, I used GPT4 to vectorize this function without too much hassle:</p>
+
+<pre><code class="code-highlighted code-python"><span class="syntax-all syntax-keyword">def</span> <span class="syntax-all syntax-entity">non_max_suppression_vectorized</span>(<span class="syntax-all syntax-parameter">gradient</span>, <span class="syntax-all syntax-parameter">direction</span>):
+    <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">=</span> np.pi
+    <span class="syntax-all syntax-constant">M</span>, <span class="syntax-all syntax-constant">N</span> <span class="syntax-all syntax-keyword">=</span> gradient.shape
+
+    <span class="syntax-all syntax-comment"># Padding to handle edge cases
+</span>    pad_gradient <span class="syntax-all syntax-keyword">=</span> np.pad(gradient, ((<span class="syntax-all syntax-constant">1</span>, <span class="syntax-all syntax-constant">1</span>), (<span class="syntax-all syntax-constant">1</span>, <span class="syntax-all syntax-constant">1</span>)), <span class="syntax-all syntax-string">&#39;constant&#39;</span>)
+    pad_direction <span class="syntax-all syntax-keyword">=</span> np.pad(direction, ((<span class="syntax-all syntax-constant">1</span>, <span class="syntax-all syntax-constant">1</span>), (<span class="syntax-all syntax-constant">1</span>, <span class="syntax-all syntax-constant">1</span>)), <span class="syntax-all syntax-string">&#39;constant&#39;</span>)
+
+    <span class="syntax-all syntax-comment"># Prepare the masks for each direction
+</span>    horizontal_mask <span class="syntax-all syntax-keyword">=</span> (<span class="syntax-all syntax-constant">0</span> <span class="syntax-all syntax-keyword">&lt;=</span> pad_direction) <span class="syntax-all syntax-keyword">&amp;</span> (pad_direction <span class="syntax-all syntax-keyword">&lt;</span> <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span>) <span class="syntax-all syntax-keyword">|</span> (<span class="syntax-all syntax-constant">7</span> <span class="syntax-all syntax-keyword">*</span> <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span> <span class="syntax-all syntax-keyword">&lt;=</span> pad_direction) <span class="syntax-all syntax-keyword">&amp;</span> (pad_direction <span class="syntax-all syntax-keyword">&lt;=</span> <span class="syntax-all syntax-constant">PI</span>)
+    right_diagonal_mask <span class="syntax-all syntax-keyword">=</span> (<span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span> <span class="syntax-all syntax-keyword">&lt;=</span> pad_direction) <span class="syntax-all syntax-keyword">&amp;</span> (pad_direction <span class="syntax-all syntax-keyword">&lt;</span> <span class="syntax-all syntax-constant">3</span> <span class="syntax-all syntax-keyword">*</span> <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span>)
+    vertical_mask <span class="syntax-all syntax-keyword">=</span> (<span class="syntax-all syntax-constant">3</span> <span class="syntax-all syntax-keyword">*</span> <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span> <span class="syntax-all syntax-keyword">&lt;=</span> pad_direction) <span class="syntax-all syntax-keyword">&amp;</span> (pad_direction <span class="syntax-all syntax-keyword">&lt;</span> <span class="syntax-all syntax-constant">5</span> <span class="syntax-all syntax-keyword">*</span> <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span>)
+    left_diagonal_mask <span class="syntax-all syntax-keyword">=</span> (<span class="syntax-all syntax-constant">5</span> <span class="syntax-all syntax-keyword">*</span> <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span> <span class="syntax-all syntax-keyword">&lt;=</span> pad_direction) <span class="syntax-all syntax-keyword">&amp;</span> (pad_direction <span class="syntax-all syntax-keyword">&lt;</span> <span class="syntax-all syntax-constant">7</span> <span class="syntax-all syntax-keyword">*</span> <span class="syntax-all syntax-constant">PI</span> <span class="syntax-all syntax-keyword">/</span> <span class="syntax-all syntax-constant">8</span>)
+
+    <span class="syntax-all syntax-comment"># Determine which pixels are local maxima based on their surrounding pixel values
+</span>    local_maxima <span class="syntax-all syntax-keyword">=</span> np.zeros_like(gradient, <span class="syntax-all syntax-parameter">dtype</span><span class="syntax-all syntax-keyword">=</span><span class="syntax-all syntax-constant">bool</span>)
+    local_maxima <span class="syntax-all syntax-keyword">|=</span> horizontal_mask[<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>,<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>] <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>, :<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">2</span>]) <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>, <span class="syntax-all syntax-constant">2</span>:])
+    local_maxima <span class="syntax-all syntax-keyword">|=</span> right_diagonal_mask[<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>,<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>] <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">2</span>, :<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">2</span>]) <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[<span class="syntax-all syntax-constant">2</span>:, <span class="syntax-all syntax-constant">2</span>:])
+    local_maxima <span class="syntax-all syntax-keyword">|=</span> vertical_mask[<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>,<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>] <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">2</span>, <span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>]) <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[<span class="syntax-all syntax-constant">2</span>:, <span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>])
+    local_maxima <span class="syntax-all syntax-keyword">|=</span> left_diagonal_mask[<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>,<span class="syntax-all syntax-constant">1</span>:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">1</span>] <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[:<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">2</span>, <span class="syntax-all syntax-constant">2</span>:]) <span class="syntax-all syntax-keyword">&amp;</span> (gradient <span class="syntax-all syntax-keyword">&gt;=</span> pad_gradient[<span class="syntax-all syntax-constant">2</span>:, :<span class="syntax-all syntax-keyword">-</span><span class="syntax-all syntax-constant">2</span>])
+
+    <span class="syntax-all syntax-keyword">return</span> np.where(local_maxima, gradient, <span class="syntax-all syntax-constant">0</span>)</code></pre>
+
+<p>The resulting image is the following:</p>
+
+<figure><img src="3_canny_edges_after_nms.png"/></figure>
+
+<p>To compare I used cv’s <code>Canny()</code> function:</p>
+
+<figure><img src="4_canny_cv.png"/></figure>
+
+<p>The edges are much better preserved in the implementation of OpenCV. This is because of various differences in the implementation. </p>
+
+<ul>
+	<li>I suppress numerous edges by using a higher threshold value to reduce edge clutter.</li>
+	<li>OpenCV goes beyond NMS. It applies hysteresis thresholding, which uses two threshold values (high and low) instead of one. This allows OpenCV to distinguish between strong, weak, and non-relevant edges, thereby improving edge continuity and reducing noise.</li>
+</ul>
+
+<h2>5. Bonus Question</h2>
+
+<p>The <code>detect_corners()</code> function in the <code>main.py</code> file detects corners in an image and displays the result in the GUI. The function first loads the image, converts it to grayscale, and then detects corners using the cv2.goodFeaturesToTrack function. The detected corners are then drawn on the image using OpenCV&#39;s line function. Finally, the image is displayed in the GUI.</p>
+
+<p>You can call this function in the dropdown menu under <code>Detect Corners</code>:</p>
+
+<figure><img src="DraggedImage.png"/></figure>
+
+<p>You could also implement my corner detection algorithm by using the code from the Jupyter-Notebook into <code>detect_corners</code> (or better by first defining a function in the main-class with my code). I thought it would be better to use a corner detection method, that is more robust.</p>
+
+</body>
+</html>
+
