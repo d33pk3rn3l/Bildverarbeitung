@@ -77,7 +77,8 @@ def instance_segmentation_util(img):
     Output:
         instance_seg_img:    n x m x 3, different coin instances have different colors
     """
-    # Apply dilation
+    
+    """# Apply dilation
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
     dilated_img = cv2.dilate(img, kernel, iterations=2)
 
@@ -109,7 +110,23 @@ def instance_segmentation_util(img):
     instance_seg_img = closed_img * 255
 
     ### Better to use https://docs.opencv.org/4.x/d3/db4/tutorial_py_watershed.html
-    ### to do the instance segmentation, but I thought I might try something different
+    ### to do the instance segmentation, but I thought I might try something different"""
+
+    _, labeled_img = cv2.connectedComponents(img)
+    labeled_img = labeled_img.astype(np.int32)
+    labeled_img += 1
+
+    img = cv2.merge((img, img, img))
+    closed_img = cv2.convertScaleAbs(img)
+
+    watershed = cv2.watershed(img, labeled_img)
+
+    for segment in np.unique(watershed):
+        closed_img[watershed == segment] = [255 * random.random(),
+                                            255 * random.random(),
+                                            255 * random.random()]
+
+    instance_seg_img = closed_img * 255
 
     return instance_seg_img
 
