@@ -132,11 +132,11 @@ def text_recog_util(text, letter_not):
 
     # Perform binary erosion on the text_binary with the structuring element being letter_binary
     # Erosion will shrink the white regions (foreground) in the binary image
-    eroded_image = binary_erosion(text_binary, letter_binary)
+    eroded_image = erode(text_binary, letter_binary)
 
     # Perform binary dilation on the eroded image with the structuring element being letter_binary
     # Dilation will expand the white regions in the binary image
-    dilated_image = binary_dilation(eroded_image, letter_binary)
+    dilated_image = dilate(eroded_image, letter_binary)
 
     # Our final image is the dilated image
     text_er_dil = dilated_image

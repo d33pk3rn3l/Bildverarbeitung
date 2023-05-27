@@ -11,6 +11,9 @@ from libs.morphology import segment_util, close_hole_util, instance_segmentation
 
 LABEL_WIDTH = 500
 LABEL_HEIGHT = 500
+LINE_LENGTH = 10
+COLOR = (255, 0, 0)
+THICKNESS = 10
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -29,6 +32,35 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.actionInstanceSeg.triggered.connect(self.instance_segmentation)
         self.actionText_recog.triggered.connect(self.text_recog)
         
+        # Add the "Detect Corners" menu item to the "Edit" menu
+        self.actionDetectCorners = QtWidgets.QAction("Detect Corners", self)
+        self.actionDetectCorners.triggered.connect(self.detect_corners)
+        self.menuEdit.addAction(self.actionDetectCorners)
+
+    def detect_corners(self):
+        # Load the image
+        img = cv2.imread(self.img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Detect corners
+        corners = cv2.goodFeaturesToTrack(gray, 30, 0.5, 100)
+        corners = np.intp(corners)
+
+        # Draw lines on the image
+        for i in corners:
+            x, y = i.ravel()
+            cv2.line(img, (x - LINE_LENGTH, y), (x + LINE_LENGTH, y), COLOR, THICKNESS)
+            cv2.line(img, (x, y - LINE_LENGTH), (x, y + LINE_LENGTH), COLOR, THICKNESS)
+
+        # Display the image in the GUI
+        height, width, channel = img.shape
+        bytesPerLine = 3 * width
+        qImg = QImage(img.data, width, height, bytesPerLine, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(qImg)
+        pixmap = pixmap.scaled(LABEL_WIDTH, LABEL_HEIGHT, QtCore.Qt.KeepAspectRatio)
+        self.edit_img.setPixmap(pixmap)
+
     
     def print_edited_img(self,img):
         # if img is a RGB img
